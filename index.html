@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HL7 消息校验工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          boxShadow: {
+            soft: "0 24px 80px rgba(15, 23, 42, 0.12)",
+          },
+          colors: {
+            slate: {
+              950: "#020617",
+            },
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.18),transparent_30%),linear-gradient(135deg,#f8fafc_0%,#ffffff_48%,#ecfeff_100%)] text-slate-800">
+  <div class="mx-auto w-full max-w-7xl px-4 py-6 pb-28 sm:px-6 sm:py-8 sm:pb-32 lg:px-8 lg:pb-8">
+    <header class="mx-auto max-w-3xl text-center">
+      <div class="inline-flex items-center rounded-full border border-sky-200 bg-white/80 px-4 py-2 text-sm font-medium text-sky-700 shadow-sm shadow-sky-100/80">
+        HL7 Validator
+      </div>
+      <h1 class="mt-5 text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl">校验 LIS 回复消息</h1>
+      <p class="mt-4 text-sm leading-7 text-slate-600 sm:text-lg">
+        当前工具按 PA9 协议校验双向 LIS 回复消息，只支持 <code class="rounded bg-slate-100 px-1.5 py-0.5 text-sky-700">QCK^Q02</code> 和 <code class="rounded bg-slate-100 px-1.5 py-0.5 text-sky-700">DSR^Q03</code>。
+      </p>
+      <div class="mt-6 flex flex-wrap justify-center gap-2 text-xs sm:gap-3 sm:text-sm">
+        <span class="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 font-medium text-sky-700">段顺序检查</span>
+        <span class="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 font-medium text-emerald-700">字段个数检查</span>
+        <span class="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 font-medium text-amber-700">协议必填检查</span>
+      </div>
+    </header>
+
+    <main class="mt-8 space-y-8">
+      <section class="overflow-hidden rounded-[1.5rem] border border-white/70 bg-white/90 shadow-soft backdrop-blur sm:rounded-[2rem]">
+        <div class="flex flex-col gap-5 border-b border-slate-200/80 bg-slate-950/95 px-5 py-6 text-white sm:px-8 sm:py-7 lg:flex-row lg:items-center lg:justify-between">
+          <div class="max-w-2xl">
+            <p class="text-sm font-medium uppercase tracking-[0.24em] text-sky-300">Message Input</p>
+            <h2 class="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">把 HL7 消息粘贴到这里</h2>
+            <p class="mt-3 text-sm leading-6 text-slate-300 sm:text-base">
+              输入区域已经放大，支持长消息浏览和手工编辑。建议直接粘贴 LIS 返回给仪器的原始 HL7 报文。
+            </p>
+          </div>
+          <div class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-6 text-slate-200">
+            <p class="font-semibold text-white">输入建议</p>
+            <p class="mt-1">请粘贴单条完整回复消息，消息类型需为 <code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">QCK^Q02</code> 或 <code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">DSR^Q03</code>。</p>
+          </div>
+        </div>
+
+        <div class="px-5 py-5 sm:px-8 sm:py-6">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <label for="hl7Input" class="block text-sm font-semibold text-slate-700">LIS 回复消息内容</label>
+              <p class="mt-1 text-sm text-slate-500">系统会按 PA9 协议解析 QCK^Q02 / DSR^Q03 的段结构和字段规则。</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs font-medium text-slate-500">
+              <span class="rounded-full bg-slate-100 px-3 py-1.5">仅限 QCK / DSR</span>
+              <span class="rounded-full bg-slate-100 px-3 py-1.5">保留原始格式</span>
+              <span class="rounded-full bg-slate-100 px-3 py-1.5">自动按段解析</span>
+            </div>
+          </div>
+
+          <textarea
+            id="hl7Input"
+            class="mt-4 min-h-[52vh] w-full resize-y rounded-[1.4rem] border border-slate-200 bg-slate-950 px-4 py-4 font-mono text-base leading-7 text-emerald-200 shadow-inner outline-none transition placeholder:text-slate-500 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 sm:min-h-[460px] sm:rounded-[1.75rem] sm:px-5 sm:py-5 lg:min-h-[560px]"
+            placeholder="例如：
+MSH|^~\&|||||20120508104700||QCK^Q02|4|P|2.3.1||||||UTF8|||
+MSA|AA|4|Message accepted|||0|
+ERR|0|
+QAK|SR|OK|"
+          ></textarea>
+
+          <div class="mt-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex flex-wrap gap-2">
+              <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">MSH 必须 20 字段</span>
+              <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">MSA-6 / ERR-1 必填</span>
+              <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">DSP 必填项检查</span>
+            </div>
+            <div class="hidden flex-col gap-3 sm:flex-row lg:flex">
+              <button
+                id="fillExampleBtn"
+                type="button"
+                class="inline-flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-slate-100 sm:w-auto"
+              >
+                填充示例
+              </button>
+              <button
+                id="clearBtn"
+                type="button"
+                class="inline-flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-100 sm:w-auto"
+              >
+                清空
+              </button>
+              <button
+                id="validateBtn"
+                type="button"
+                class="inline-flex min-h-[48px] w-full items-center justify-center rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-600 focus:outline-none focus:ring-4 focus:ring-sky-200 sm:w-auto"
+              >
+                开始校验
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="resultSection" class="rounded-[1.5rem] border border-slate-200/80 bg-white/90 p-5 shadow-soft backdrop-blur sm:rounded-[2rem] sm:p-8">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p class="text-sm font-medium uppercase tracking-[0.24em] text-slate-400">Validation Result</p>
+            <h2 class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">校验结果</h2>
+            <p class="mt-2 text-sm leading-6 text-slate-500">结果会根据校验状态自动使用绿色、红色、黄色高亮显示。</p>
+          </div>
+          <div id="statusBadge" class="inline-flex items-center self-start rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600">
+            等待校验
+          </div>
+        </div>
+
+        <div id="summaryCard" class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <p id="summaryText" class="text-sm leading-6 text-slate-600">
+            请输入 HL7 消息并点击“开始校验”按钮。
+          </p>
+        </div>
+
+        <div class="mt-6 grid grid-cols-3 gap-3 sm:gap-4">
+          <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-center sm:p-4 sm:text-left">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700 sm:text-xs">通过项</p>
+            <p id="passCount" class="mt-2 text-2xl font-semibold text-emerald-800 sm:text-3xl">0</p>
+          </div>
+          <div class="rounded-2xl border border-red-200 bg-red-50 p-3 text-center sm:p-4 sm:text-left">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-red-700 sm:text-xs">错误</p>
+            <p id="errorCount" class="mt-2 text-2xl font-semibold text-red-800 sm:text-3xl">0</p>
+          </div>
+          <div class="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-center sm:p-4 sm:text-left">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700 sm:text-xs">警告</p>
+            <p id="warningCount" class="mt-2 text-2xl font-semibold text-amber-800 sm:text-3xl">0</p>
+          </div>
+        </div>
+
+        <div class="mt-8 grid gap-5 xl:grid-cols-3">
+          <div class="rounded-3xl border border-red-100 bg-red-50/70 p-5">
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-slate-800">错误列表</h3>
+              <span class="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">红色 = 错误</span>
+            </div>
+            <ul id="errorList" class="space-y-3"></ul>
+          </div>
+
+          <div class="rounded-3xl border border-amber-100 bg-amber-50/70 p-5">
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-slate-800">警告列表</h3>
+              <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">黄色 = 警告</span>
+            </div>
+            <ul id="warningList" class="space-y-3"></ul>
+          </div>
+
+          <div class="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-5">
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-slate-800">通过检查</h3>
+              <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">绿色 = 通过</span>
+            </div>
+            <ul id="successList" class="space-y-3"></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/95 px-4 pb-[calc(0.9rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+    <div class="mx-auto flex max-w-7xl gap-3">
+      <button
+        id="mobileExampleBtn"
+        type="button"
+        class="inline-flex min-h-[52px] flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-slate-100"
+      >
+        示例
+      </button>
+      <button
+        id="mobileClearBtn"
+        type="button"
+        class="inline-flex min-h-[52px] flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-100"
+      >
+        清空
+      </button>
+      <button
+        id="mobileValidateBtn"
+        type="button"
+        class="inline-flex min-h-[52px] flex-[1.35] items-center justify-center rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-600 focus:outline-none focus:ring-4 focus:ring-sky-200"
+      >
+        开始校验
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const hl7Input = document.getElementById("hl7Input");
+    const fillExampleBtn = document.getElementById("fillExampleBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const validateBtn = document.getElementById("validateBtn");
+    const mobileExampleBtn = document.getElementById("mobileExampleBtn");
+    const mobileClearBtn = document.getElementById("mobileClearBtn");
+    const mobileValidateBtn = document.getElementById("mobileValidateBtn");
+    const resultSection = document.getElementById("resultSection");
+    const statusBadge = document.getElementById("statusBadge");
+    const summaryCard = document.getElementById("summaryCard");
+    const summaryText = document.getElementById("summaryText");
+    const passCount = document.getElementById("passCount");
+    const errorCount = document.getElementById("errorCount");
+    const warningCount = document.getElementById("warningCount");
+    const errorList = document.getElementById("errorList");
+    const warningList = document.getElementById("warningList");
+    const successList = document.getElementById("successList");
+    const supportedMessageTypes = new Set(["QCK^Q02", "DSR^Q03"]);
+    const segmentFieldLimits = {
+      MSH: 20,
+      MSA: 6,
+      ERR: 1,
+      QAK: 2,
+      QRD: 12,
+      QRF: 9,
+      DSP: 5,
+      DSC: 1,
+    };
+    const allowedSpecimenTypes = ["serum", "plasma", "urine", "blood", "capillary"];
+    const exampleMessage = `MSH|^~\\&|||||20120508104700||QCK^Q02|4|P|2.3.1||||||UTF8|||
+MSA|AA|4|Message accepted|||0|
+ERR|0|
+QAK|SR|OK|`;
+
+    function normalizeLineBreaks(text) {
+      return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    }
+
+    function stripTrailingDelimiterArtifact(fields) {
+      const normalized = [...fields];
+      if (normalized.length && normalized[normalized.length - 1] === "") {
+        normalized.pop();
+      }
+      return normalized;
+    }
+
+    function getSegmentFields(segment, separator = "|") {
+      return stripTrailingDelimiterArtifact(segment.split(separator).slice(1));
+    }
+
+    function getMshField(fields, fieldSeparator, position) {
+      if (position === 1) {
+        return fieldSeparator;
+      }
+      return fields[position - 2] ? fields[position - 2].trim() : "";
+    }
+
+    function isTimestamp14(value) {
+      return /^\d{14}$/.test(value);
+    }
+
+    function isPositiveInteger(value) {
+      return /^[1-9]\d*$/.test(value);
+    }
+
+    function isNonNegativeInteger(value) {
+      return /^(0|[1-9]\d*)$/.test(value);
+    }
+
+    function validateSegmentFieldCount(segmentName, actualCount, errors) {
+      const expectedCount = segmentFieldLimits[segmentName];
+      if (!expectedCount) {
+        return;
+      }
+
+      if (actualCount !== expectedCount) {
+        errors.push(`${segmentName} 段字段数量应为 ${expectedCount} 个，当前为 ${actualCount} 个。`);
+      }
+    }
+
+    function validateQckStructure(segmentNames, errors, successes) {
+      const expected = ["MSH", "MSA", "ERR", "QAK"];
+      if (segmentNames.length !== expected.length) {
+        errors.push(`QCK^Q02 应仅包含 ${expected.join(" -> ")} 这 4 个段，当前检测到 ${segmentNames.join(" -> ")}。`);
+        return;
+      }
+
+      const sameOrder = expected.every((name, index) => segmentNames[index] === name);
+      if (!sameOrder) {
+        errors.push(`QCK^Q02 的段顺序应为 ${expected.join(" -> ")}。`);
+        return;
+      }
+
+      successes.push("QCK^Q02 段结构检查通过。");
+    }
+
+    function validateDsrStructure(segmentNames, errors, successes) {
+      if (segmentNames.length < 8) {
+        errors.push("DSR^Q03 至少应包含 MSH、MSA、ERR、QAK、QRD、QRF、DSP、DSC 这 8 类段。");
+        return;
+      }
+
+      const prefix = ["MSH", "MSA", "ERR", "QAK", "QRD", "QRF"];
+      const prefixOk = prefix.every((name, index) => segmentNames[index] === name);
+      if (!prefixOk) {
+        errors.push("DSR^Q03 的前 6 个段顺序应为 MSH -> MSA -> ERR -> QAK -> QRD -> QRF。");
+      }
+
+      if (segmentNames[segmentNames.length - 1] !== "DSC") {
+        errors.push("DSR^Q03 的最后一个段必须是 DSC。");
+      }
+
+      const middleSegments = segmentNames.slice(6, -1);
+      if (!middleSegments.length) {
+        errors.push("DSR^Q03 在 QRF 与 DSC 之间至少应包含一个 DSP 段。");
+      } else if (middleSegments.some((name) => name !== "DSP")) {
+        errors.push("DSR^Q03 的 QRF 与 DSC 之间只能出现 DSP 段。");
+      } else {
+        successes.push(`DSR^Q03 段结构检查通过，共检测到 ${middleSegments.length} 个 DSP 段。`);
+      }
+    }
+
+    function createListItem(message, tone) {
+      const toneMap = {
+        error: "border-red-200 bg-red-50 text-red-800",
+        warning: "border-amber-200 bg-amber-50 text-amber-800",
+        success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        neutral: "border-slate-200 bg-slate-50 text-slate-600",
+      };
+
+      const li = document.createElement("li");
+      li.className = `rounded-2xl border px-4 py-3 text-sm leading-6 ${toneMap[tone] || toneMap.neutral}`;
+      li.textContent = message;
+      return li;
+    }
+
+    function renderList(target, items, tone, emptyMessage) {
+      target.innerHTML = "";
+      if (!items.length) {
+        target.appendChild(createListItem(emptyMessage, "neutral"));
+        return;
+      }
+
+      items.forEach((item) => {
+        target.appendChild(createListItem(item, tone));
+      });
+    }
+
+    function setStatus(hasErrors, hasWarnings) {
+      statusBadge.className = "inline-flex items-center self-start rounded-full px-4 py-2 text-sm font-semibold";
+      summaryCard.className = "mt-6 rounded-2xl border p-5";
+
+      if (hasErrors) {
+        statusBadge.classList.add("bg-red-100", "text-red-700");
+        summaryCard.classList.add("border-red-200", "bg-red-50");
+        statusBadge.textContent = "校验失败";
+        return;
+      }
+
+      if (hasWarnings) {
+        statusBadge.classList.add("bg-amber-100", "text-amber-700");
+        summaryCard.classList.add("border-amber-200", "bg-amber-50");
+        statusBadge.textContent = "通过（含警告）";
+        return;
+      }
+
+      statusBadge.classList.add("bg-emerald-100", "text-emerald-700");
+      summaryCard.classList.add("border-emerald-200", "bg-emerald-50");
+      statusBadge.textContent = "校验通过";
+    }
+
+    function resetResultPanel() {
+      statusBadge.className = "inline-flex items-center self-start rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600";
+      statusBadge.textContent = "等待校验";
+      summaryCard.className = "mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5";
+      summaryText.textContent = "请输入一条 QCK^Q02 或 DSR^Q03 回复消息并点击“开始校验”按钮。";
+      passCount.textContent = "0";
+      errorCount.textContent = "0";
+      warningCount.textContent = "0";
+      renderList(errorList, [], "error", "校验后这里会显示错误。");
+      renderList(warningList, [], "warning", "校验后这里会显示警告。");
+      renderList(successList, [], "success", "校验后这里会显示通过项。");
+    }
+
+    function validateHl7Message(rawInput) {
+      const errors = [];
+      const warnings = [];
+      const successes = [];
+
+      const trimmedInput = rawInput.trim();
+
+      if (!trimmedInput) {
+        errors.push("请输入 HL7 消息内容。");
+        return { errors, warnings, successes };
+      }
+
+      const normalizedInput = normalizeLineBreaks(trimmedInput);
+      const rawSegments = normalizedInput.split("\n");
+      const segments = rawSegments
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+
+      if (!segments.length) {
+        errors.push("未识别到有效的 HL7 段。");
+        return { errors, warnings, successes };
+      }
+
+      const segmentNames = segments.map((segment) => segment.slice(0, 3));
+      const mshCount = segmentNames.filter((name) => name === "MSH").length;
+      if (mshCount !== 1) {
+        errors.push(`当前输入应只包含 1 条完整消息，检测到 ${mshCount} 个 MSH 段。`);
+      }
+
+      const mshSegment = segments[0];
+
+      if (!mshSegment.startsWith("MSH")) {
+        errors.push("首段必须以 MSH 开头。");
+        return { errors, warnings, successes };
+      }
+      successes.push("检测到 MSH 段开头。");
+
+      if (mshSegment.length < 8) {
+        errors.push("MSH 段长度不足，无法识别分隔符。");
+        return { errors, warnings, successes };
+      }
+
+      const fieldSeparator = mshSegment.charAt(3);
+      const encodingCharacters = mshSegment.substring(4, 8);
+      const expectedEncoding = "^~\\&";
+      const mshFields = getSegmentFields(mshSegment, "|");
+      const mshFieldCount = mshFields.length + 1;
+
+      validateSegmentFieldCount("MSH", mshFieldCount, errors);
+
+      if (fieldSeparator !== "|") {
+        errors.push(`字段分隔符错误：当前为 "${fieldSeparator}"，期望为 "|"。`);
+      } else {
+        successes.push('字段分隔符检查通过："|"。');
+      }
+
+      if (encodingCharacters !== expectedEncoding) {
+        errors.push(`编码字符错误：当前为 "${encodingCharacters}"，期望为 "${expectedEncoding}"。`);
+      } else {
+        successes.push(`编码字符检查通过："${expectedEncoding}"。`);
+      }
+
+      const msh7 = getMshField(mshFields, fieldSeparator, 7);
+      const msh9 = getMshField(mshFields, fieldSeparator, 9);
+      const msh10 = getMshField(mshFields, fieldSeparator, 10);
+      const msh11 = getMshField(mshFields, fieldSeparator, 11);
+      const msh12 = getMshField(mshFields, fieldSeparator, 12);
+      const msh15 = getMshField(mshFields, fieldSeparator, 15);
+      const msh16 = getMshField(mshFields, fieldSeparator, 16);
+      const msh18 = getMshField(mshFields, fieldSeparator, 18);
+
+      if (!msh7) {
+        errors.push("缺少必填字段 MSH-7（消息时间）。");
+      } else {
+        successes.push(`MSH-7 存在：${msh7}`);
+        if (!isTimestamp14(msh7)) {
+          errors.push("MSH-7 格式错误，应为 YYYYMMDDHHMMSS。");
+        }
+      }
+
+      if (!msh9) {
+        errors.push("缺少必填字段 MSH-9（消息类型）。");
+      } else {
+        successes.push(`MSH-9 存在：${msh9}`);
+        if (!supportedMessageTypes.has(msh9)) {
+          errors.push(`当前工具只校验 QCK^Q02 和 DSR^Q03，当前消息类型为 ${msh9}。`);
+        }
+      }
+
+      if (!msh10) {
+        errors.push("缺少必填字段 MSH-10（消息控制 ID）。");
+      } else if (!isPositiveInteger(msh10)) {
+        errors.push("MSH-10 应为从 1 开始递增的正整数。");
+      } else {
+        successes.push(`MSH-10 检查通过：${msh10}`);
+      }
+
+      if (!msh11) {
+        errors.push("缺少必填字段 MSH-11（处理 ID）。");
+      } else if (msh11 !== "P") {
+        errors.push(`MSH-11 应为 "P"，当前为 "${msh11}"。`);
+      } else {
+        successes.push('MSH-11 检查通过："P"。');
+      }
+
+      if (!msh12) {
+        errors.push("缺少必填字段 MSH-12（版本号）。");
+      } else if (msh12 !== "2.3.1") {
+        errors.push(`MSH-12 应为 "2.3.1"，当前为 "${msh12}"。`);
+      } else {
+        successes.push('MSH-12 检查通过："2.3.1"。');
+      }
+
+      if (msh18 !== "UTF8") {
+        errors.push(`MSH-18 应为 "UTF8"，当前为 "${msh18 || "空"}"。`);
+      } else {
+        successes.push('MSH-18 检查通过："UTF8"。');
+      }
+
+      if (msh16) {
+        warnings.push("按 PA9 协议，应答消息通常不填写 MSH-16（Application Acknowledgment Type）。");
+      }
+
+      if (msh9 === "QCK^Q02" && msh15) {
+        warnings.push("按 PA9 协议，QCK^Q02 应答消息通常不填写 MSH-15。");
+      }
+
+      if (msh9 === "DSR^Q03" && msh15 === "P") {
+        warnings.push('当前 DSR^Q03 的 MSH-15 为 "P"，这更像 LIS 主动下发样本信息，而不是对查询的常规回复。');
+      } else if (msh9 === "DSR^Q03" && msh15 && msh15 !== "P") {
+        warnings.push(`DSR^Q03 的 MSH-15 当前为 "${msh15}"，协议未定义该取值。`);
+      }
+
+      if (supportedMessageTypes.has(msh9)) {
+        if (msh9 === "QCK^Q02") {
+          validateQckStructure(segmentNames, errors, successes);
+        }
+
+        if (msh9 === "DSR^Q03") {
+          validateDsrStructure(segmentNames, errors, successes);
+        }
+
+        const parsedSegments = segments.map((segment) => ({
+          name: segment.slice(0, 3),
+          raw: segment,
+          fields: getSegmentFields(segment, "|"),
+        }));
+
+        const msaSegment = parsedSegments.find((segment) => segment.name === "MSA");
+        const errSegment = parsedSegments.find((segment) => segment.name === "ERR");
+        const qakSegment = parsedSegments.find((segment) => segment.name === "QAK");
+        const qrdSegment = parsedSegments.find((segment) => segment.name === "QRD");
+        const qrfSegment = parsedSegments.find((segment) => segment.name === "QRF");
+        const dscSegment = parsedSegments.find((segment) => segment.name === "DSC");
+        const dspSegments = parsedSegments.filter((segment) => segment.name === "DSP");
+
+        let msaCode = "";
+        let msaAck = "";
+
+        if (!msaSegment) {
+          errors.push("缺少 MSA 段。");
+        } else {
+          validateSegmentFieldCount("MSA", msaSegment.fields.length, errors);
+          const msa1 = (msaSegment.fields[0] || "").trim();
+          const msa2 = (msaSegment.fields[1] || "").trim();
+          const msa6 = (msaSegment.fields[5] || "").trim();
+          const validAckCodes = new Set(["AA", "AE", "AR"]);
+          const aeCodes = new Set(["100", "101", "102", "103"]);
+          const arCodes = new Set(["200", "201", "202", "203", "204", "205", "206", "207"]);
+
+          msaAck = msa1;
+          msaCode = msa6;
+
+          if (!msa1) {
+            errors.push("MSA-1（Acknowledgment Code）不能为空。");
+          } else if (!validAckCodes.has(msa1)) {
+            errors.push(`MSA-1 只能为 AA、AE、AR，当前为 "${msa1}"。`);
+          }
+
+          if (!msa2) {
+            errors.push("MSA-2（Message Control ID）不能为空。");
+          } else if (msh10 && msa2 !== msh10) {
+            errors.push(`MSA-2 应与当前消息的 MSH-10 保持一致，当前为 "${msa2}"，MSH-10 为 "${msh10}"。`);
+          }
+
+          if (!msa6) {
+            errors.push("MSA-6（Error Condition）不能为空。");
+          } else if (!isNonNegativeInteger(msa6)) {
+            errors.push("MSA-6 应为非负整数状态码。");
+          } else if (msa1 === "AA" && msa6 !== "0") {
+            errors.push(`MSA-1 为 AA 时，MSA-6 应为 0，当前为 ${msa6}。`);
+          } else if (msa1 === "AE" && !aeCodes.has(msa6)) {
+            errors.push(`MSA-1 为 AE 时，MSA-6 应在 100~103 之间，当前为 ${msa6}。`);
+          } else if (msa1 === "AR" && !arCodes.has(msa6)) {
+            errors.push(`MSA-1 为 AR 时，MSA-6 应在 200~207 之间，当前为 ${msa6}。`);
+          } else {
+            successes.push("MSA 段检查通过。");
+          }
+        }
+
+        if (!errSegment) {
+          errors.push("缺少 ERR 段。");
+        } else {
+          validateSegmentFieldCount("ERR", errSegment.fields.length, errors);
+          const errCode = (errSegment.fields[0] || "").trim();
+          if (!errCode) {
+            errors.push("ERR-1（Error Code and Location）不能为空。");
+          } else if (!isNonNegativeInteger(errCode)) {
+            errors.push("ERR-1 应为非负整数。");
+          } else if (msaCode && errCode !== msaCode) {
+            errors.push(`ERR-1 应与 MSA-6 保持一致，当前 ERR-1=${errCode}，MSA-6=${msaCode}。`);
+          } else {
+            successes.push("ERR 段检查通过。");
+          }
+        }
+
+        if (!qakSegment) {
+          errors.push("缺少 QAK 段。");
+        } else {
+          validateSegmentFieldCount("QAK", qakSegment.fields.length, errors);
+          const qak1 = (qakSegment.fields[0] || "").trim();
+          const qak2 = (qakSegment.fields[1] || "").trim();
+          const qakStatuses = new Set(["OK", "NF", "AE", "AR"]);
+
+          if (qak1 !== "SR") {
+            errors.push(`QAK-1（Query Tag）应为 "SR"，当前为 "${qak1 || "空"}"。`);
+          }
+
+          if (!qak2) {
+            errors.push("QAK-2（Query Response Status）不能为空。");
+          } else if (!qakStatuses.has(qak2)) {
+            errors.push(`QAK-2 只能为 OK、NF、AE、AR，当前为 "${qak2}"。`);
+          } else if (msh9 === "DSR^Q03" && qak2 !== "OK") {
+            errors.push(`DSR^Q03 中 QAK-2 应为 "OK"，当前为 "${qak2}"。`);
+          } else {
+            successes.push("QAK 段检查通过。");
+          }
+
+          if ((qak2 === "OK" || qak2 === "NF") && msaAck && msaAck !== "AA") {
+            warnings.push(`QAK-2 为 ${qak2} 时，MSA-1 通常应为 AA，当前为 ${msaAck}。`);
+          }
+
+          if (qak2 === "AE" && msaAck && msaAck !== "AE") {
+            warnings.push(`QAK-2 为 AE 时，MSA-1 通常也应为 AE，当前为 ${msaAck}。`);
+          }
+
+          if (qak2 === "AR" && msaAck && msaAck !== "AR") {
+            warnings.push(`QAK-2 为 AR 时，MSA-1 通常也应为 AR，当前为 ${msaAck}。`);
+          }
+        }
+
+        if (msh9 === "DSR^Q03") {
+          if (!qrdSegment) {
+            errors.push("DSR^Q03 缺少 QRD 段。");
+          } else {
+            validateSegmentFieldCount("QRD", qrdSegment.fields.length, errors);
+            const qrd1 = (qrdSegment.fields[0] || "").trim();
+            const qrd2 = (qrdSegment.fields[1] || "").trim();
+            const qrd3 = (qrdSegment.fields[2] || "").trim();
+            const qrd4 = (qrdSegment.fields[3] || "").trim();
+            const qrd7 = (qrdSegment.fields[6] || "").trim();
+            const qrd9 = (qrdSegment.fields[8] || "").trim();
+            const qrd12 = (qrdSegment.fields[11] || "").trim();
+
+            if (!qrd1) {
+              errors.push("QRD-1（Query Date/Time）不能为空。");
+            } else if (!isTimestamp14(qrd1)) {
+              errors.push("QRD-1 格式错误，应为 YYYYMMDDHHMMSS。");
+            }
+
+            if (qrd2 !== "R") {
+              errors.push(`QRD-2 应为 "R"，当前为 "${qrd2 || "空"}"。`);
+            }
+
+            if (qrd3 !== "D") {
+              errors.push(`QRD-3 应为 "D"，当前为 "${qrd3 || "空"}"。`);
+            }
+
+            if (!qrd4) {
+              errors.push("QRD-4（Query ID）不能为空。");
+            } else if (!isPositiveInteger(qrd4)) {
+              errors.push("QRD-4 应为正整数。");
+            }
+
+            if (qrd7 !== "RD") {
+              errors.push(`QRD-7 应为 "RD"，当前为 "${qrd7 || "空"}"。`);
+            }
+
+            if (qrd9 !== "OTH") {
+              errors.push(`QRD-9 应为 "OTH"，当前为 "${qrd9 || "空"}"。`);
+            }
+
+            if (qrd12 && qrd12 !== "T") {
+              errors.push(`QRD-12 如有值应为 "T"，当前为 "${qrd12}"。`);
+            } else if (!qrd12) {
+              warnings.push("QRD-12 按协议通常取 T（Full results），当前为空。");
+            }
+
+            successes.push("QRD 段检查通过。");
+          }
+
+          if (!qrfSegment) {
+            errors.push("DSR^Q03 缺少 QRF 段。");
+          } else {
+            validateSegmentFieldCount("QRF", qrfSegment.fields.length, errors);
+            const qrf2 = (qrfSegment.fields[1] || "").trim();
+            const qrf3 = (qrfSegment.fields[2] || "").trim();
+            const qrf6 = (qrfSegment.fields[5] || "").trim();
+            const qrf7 = (qrfSegment.fields[6] || "").trim();
+            const qrf8 = (qrfSegment.fields[7] || "").trim();
+
+            if (qrf2 && !isTimestamp14(qrf2)) {
+              errors.push("QRF-2 格式错误，应为 YYYYMMDDHHMMSS。");
+            }
+
+            if (qrf3 && !isTimestamp14(qrf3)) {
+              errors.push("QRF-3 格式错误，应为 YYYYMMDDHHMMSS。");
+            }
+
+            if (qrf6 !== "RCT") {
+              errors.push(`QRF-6 应为 "RCT"，当前为 "${qrf6 || "空"}"。`);
+            }
+
+            if (qrf7 !== "COR") {
+              errors.push(`QRF-7 应为 "COR"，当前为 "${qrf7 || "空"}"。`);
+            }
+
+            if (qrf8 !== "ALL") {
+              errors.push(`QRF-8 应为 "ALL"，当前为 "${qrf8 || "空"}"。`);
+            }
+
+            successes.push("QRF 段检查通过。");
+          }
+
+          if (!dspSegments.length) {
+            errors.push("DSR^Q03 至少需要 1 个 DSP 段。");
+          } else {
+            const dspValueMap = new Map();
+            const dspIds = [];
+            let previousDspId = 0;
+
+            dspSegments.forEach((segment, index) => {
+              validateSegmentFieldCount("DSP", segment.fields.length, errors);
+
+              const setIdRaw = (segment.fields[0] || "").trim();
+              const dataLine = (segment.fields[2] || "").trim();
+              const humanIndex = index + 1;
+
+              if (!setIdRaw) {
+                errors.push(`第 ${humanIndex} 个 DSP 段缺少 DSP-1（Set ID）。`);
+                return;
+              }
+
+              if (!isPositiveInteger(setIdRaw)) {
+                errors.push(`第 ${humanIndex} 个 DSP 段的 DSP-1 应为正整数，当前为 "${setIdRaw}"。`);
+                return;
+              }
+
+              const dspId = Number(setIdRaw);
+              if (dspValueMap.has(dspId)) {
+                errors.push(`DSP-1=${dspId} 重复出现。`);
+              }
+
+              if (dspId <= previousDspId) {
+                errors.push(`DSP 段应按 Set ID 递增排列，当前检测到 ${previousDspId} 后出现 ${dspId}。`);
+              }
+              previousDspId = dspId;
+
+              dspIds.push(dspId);
+              dspValueMap.set(dspId, dataLine);
+
+              if (dspId === 3 && dataLine.length > 32) {
+                errors.push("DSP-3（病人姓名）最长不能超过 32 个字符。");
+              }
+
+              if ((dspId === 4 || dspId === 12 || dspId === 23) && dataLine && !isTimestamp14(dataLine)) {
+                errors.push(`DSP-${dspId} 的 Data Line 时间格式错误，应为 YYYYMMDDHHMMSS。`);
+              }
+
+              if (dspId === 5 && dataLine && !["M", "F", "O"].includes(dataLine)) {
+                errors.push(`DSP-5（性别）只能为 M、F、O，当前为 "${dataLine}"。`);
+              }
+
+              if (dspId === 6 && dataLine && !["O", "A", "B", "AB"].includes(dataLine)) {
+                errors.push(`DSP-6（血型）只能为 O、A、B、AB，当前为 "${dataLine}"。`);
+              }
+
+              if (dspId === 15 && dataLine && !["outpatient", "inpatient", "Other"].includes(dataLine)) {
+                errors.push(`DSP-15（病人类别）只能为 outpatient、inpatient、Other，当前为 "${dataLine}"。`);
+              }
+
+              if (dspId === 17 && dataLine && !["own", "insurance"].includes(dataLine)) {
+                errors.push(`DSP-17（收费类型）只能为 own、insurance，当前为 "${dataLine}"。`);
+              }
+
+              if (dspId === 22 && dataLine && !isPositiveInteger(dataLine)) {
+                errors.push(`DSP-22（样本编号）应为正整数，当前为 "${dataLine}"。`);
+              }
+
+              if (dspId === 24 && !["Y", "N"].includes(dataLine)) {
+                errors.push(`DSP-24（是否急诊）必填，且只能为 Y 或 N，当前为 "${dataLine || "空"}"。`);
+              }
+
+              if (dspId === 26 && !allowedSpecimenTypes.includes(dataLine)) {
+                errors.push(`DSP-26（样本类型）必填，且只能为 ${allowedSpecimenTypes.join("、")}，当前为 "${dataLine || "空"}"。`);
+              }
+
+              if (dspId >= 29) {
+                if (!dataLine) {
+                  errors.push(`DSP-${dspId}（测试项目）不能为空。`);
+                } else {
+                  const components = dataLine.split("^");
+                  const channelNo = (components[0] || "").trim();
+
+                  if (!channelNo) {
+                    errors.push(`DSP-${dspId} 的项目通道号不能为空。`);
+                  } else if (!isPositiveInteger(channelNo)) {
+                    errors.push(`DSP-${dspId} 的第一位必须是整数项目通道号，例如 "41^^^"，当前为 "${channelNo}"。`);
+                  }
+                }
+              }
+            });
+
+            if (dspIds.length && dspIds[0] !== 1) {
+              warnings.push(`DSP 段通常从 DSP|1| 开始，当前第一条为 DSP|${dspIds[0]}|。`);
+            }
+
+            const barcode = (dspValueMap.get(21) || "").trim();
+            const sampleNo = (dspValueMap.get(22) || "").trim();
+            if (!barcode && !sampleNo) {
+              errors.push("DSP-21（样本条码）和 DSP-22（样本编号）必须至少填写一个。");
+            }
+
+            const projectIds = [...dspValueMap.keys()].filter((id) => id >= 29).sort((a, b) => a - b);
+            if (!projectIds.length) {
+              errors.push("DSR^Q03 至少需要 1 个 DSP-29 及以上的测试项目字段。");
+            } else {
+              if (projectIds[0] !== 29) {
+                errors.push(`测试项目 DSP 段必须从 DSP-29 开始，当前第一项为 DSP-${projectIds[0]}。`);
+              }
+
+              for (let index = 1; index < projectIds.length; index += 1) {
+                if (projectIds[index] !== projectIds[index - 1] + 1) {
+                  warnings.push(`测试项目 DSP 段编号存在跳号：DSP-${projectIds[index - 1]} 后出现 DSP-${projectIds[index]}。`);
+                }
+              }
+            }
+
+            successes.push("DSP 段关键字段检查通过。");
+          }
+
+          if (!dscSegment) {
+            errors.push("DSR^Q03 缺少 DSC 段。");
+          } else {
+            validateSegmentFieldCount("DSC", dscSegment.fields.length, errors);
+            const dscValue = (dscSegment.fields[0] || "").trim();
+            if (dscValue && !isPositiveInteger(dscValue)) {
+              errors.push(`DSC-1 如有值应为正整数连续指针，当前为 "${dscValue}"。`);
+            } else if (!dscValue) {
+              successes.push("DSC 段检查通过：当前为空，表示本次数据传输结束。");
+            } else {
+              successes.push(`DSC 段检查通过：连续指针为 ${dscValue}。`);
+            }
+          }
+        }
+      }
+
+      if (rawSegments.some((segment) => !segment.trim())) {
+        warnings.push("消息中包含空白段，已在校验时忽略。");
+      }
+
+      if (!errors.length && supportedMessageTypes.has(msh9)) {
+        successes.push("协议范围内的基础字段和结构校验已完成。");
+      }
+
+      return { errors, warnings, successes };
+    }
+
+    function runValidation() {
+      const result = validateHl7Message(hl7Input.value);
+      const hasErrors = result.errors.length > 0;
+      const hasWarnings = result.warnings.length > 0;
+
+      setStatus(hasErrors, hasWarnings);
+
+      passCount.textContent = String(result.successes.length);
+      errorCount.textContent = String(result.errors.length);
+      warningCount.textContent = String(result.warnings.length);
+
+      if (hasErrors) {
+        summaryText.textContent = `校验失败，共发现 ${result.errors.length} 个错误和 ${result.warnings.length} 个警告。`;
+      } else if (hasWarnings) {
+        summaryText.textContent = `消息通过基础校验，但发现 ${result.warnings.length} 个警告，请确认细节。`;
+      } else {
+        summaryText.textContent = "消息通过所有基础校验规则。";
+      }
+
+      renderList(errorList, result.errors, "error", "未发现错误。");
+      renderList(warningList, result.warnings, "warning", "未发现警告。");
+      renderList(successList, result.successes, "success", "暂无通过项。");
+      if (window.innerWidth < 1024) {
+        resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    function fillExampleMessage() {
+      hl7Input.value = exampleMessage;
+      resetResultPanel();
+      hl7Input.focus();
+    }
+
+    function clearMessage() {
+      hl7Input.value = "";
+      resetResultPanel();
+      hl7Input.focus();
+    }
+
+    validateBtn.addEventListener("click", runValidation);
+    mobileValidateBtn.addEventListener("click", runValidation);
+    fillExampleBtn.addEventListener("click", fillExampleMessage);
+    mobileExampleBtn.addEventListener("click", fillExampleMessage);
+    clearBtn.addEventListener("click", clearMessage);
+    mobileClearBtn.addEventListener("click", clearMessage);
+
+    resetResultPanel();
+  </script>
+</body>
+</html>
