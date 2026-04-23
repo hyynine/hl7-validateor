@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -51,7 +51,7 @@
           </div>
           <div class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-6 text-slate-200">
             <p class="font-semibold text-white">输入建议</p>
-            <p class="mt-1">请粘贴单条完整回复消息，消息类型需为 <code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">QCK^Q02</code> 或 <code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">DSR^Q03</code>。</p>
+              <p class="mt-1">支持直接粘贴原始 HL7 报文，也支持带 <code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">&lt;CR&gt;</code>、<code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">&lt;FS&gt;</code> 的通讯日志；工具会自动提取 <code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">QCK^Q02</code> / <code class="rounded bg-white/10 px-1.5 py-0.5 text-sky-200">DSR^Q03</code> 回复消息。</p>
           </div>
         </div>
 
@@ -144,6 +144,17 @@ QAK|SR|OK|"
           </div>
         </div>
 
+        <div class="mt-8 rounded-3xl border border-sky-100 bg-sky-50/70 p-5">
+          <div class="mb-3 flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-800">解析后的报文</h3>
+              <p class="mt-1 text-sm text-slate-500">支持将日志中的 <code class="rounded bg-white px-1.5 py-0.5 text-sky-700">&lt;CR&gt;</code> 等控制标记自动还原为可读的 HL7 段内容。</p>
+            </div>
+            <span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-medium text-sky-700">自动转换并提取</span>
+          </div>
+          <div id="extractedMessageList" class="space-y-4"></div>
+        </div>
+
         <div class="mt-8 grid gap-5 xl:grid-cols-3">
           <div class="rounded-3xl border border-red-100 bg-red-50/70 p-5">
             <div class="mb-3 flex items-center justify-between">
@@ -217,6 +228,7 @@ QAK|SR|OK|"
     const errorList = document.getElementById("errorList");
     const warningList = document.getElementById("warningList");
     const successList = document.getElementById("successList");
+    const extractedMessageList = document.getElementById("extractedMessageList");
     const supportedMessageTypes = new Set(["QCK^Q02", "DSR^Q03"]);
     const segmentFieldLimits = {
       MSH: 20,
@@ -269,6 +281,115 @@ QAK|SR|OK|`;
       return /^(0|[1-9]\d*)$/.test(value);
     }
 
+    function isDigitString(value) {
+      return /^\d+$/.test(value);
+    }
+
+    function decodeHl7ControlTokens(text) {
+      const tokenMap = {
+        VT: "\x0b",
+        FS: "\x1c",
+        CR: "\r",
+        LF: "\n",
+        SP: " ",
+        TAB: "\t",
+      };
+
+      return text
+        .replace(/&lt;(VT|FS|CR|LF|SP|TAB)&gt;/gi, (_, token) => tokenMap[token.toUpperCase()])
+        .replace(/<(VT|FS|CR|LF|SP|TAB)>/gi, (_, token) => tokenMap[token.toUpperCase()]);
+    }
+
+    function sanitizeExtractedMessage(message) {
+      return normalizeLineBreaks(
+        message
+          .replace(/\x0b/g, "")
+          .replace(/\x1c/g, "")
+          .replace(/\x02/g, "")
+          .replace(/\x03/g, "")
+      )
+        .split("\n")
+        .map((segment) => segment.trim())
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    function getMessageTypeFromMessage(message) {
+      const segments = normalizeLineBreaks(message)
+        .split("\n")
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+      const mshSegment = segments.find((segment) => segment.startsWith("MSH|"));
+
+      if (!mshSegment || mshSegment.length < 4) {
+        return "";
+      }
+
+      const fieldSeparator = mshSegment.charAt(3);
+      const mshFields = getSegmentFields(mshSegment, fieldSeparator);
+      return getMshField(mshFields, fieldSeparator, 9);
+    }
+
+    function prefixResultItems(items, label) {
+      return items.map((item) => `[${label}] ${item}`);
+    }
+
+    function extractHl7Messages(rawInput) {
+      const warnings = [];
+      const successes = [];
+      const normalizedInput = normalizeLineBreaks(rawInput);
+      const hasSymbolicControlTokens = /<(VT|FS|CR|LF|SP|TAB)>/i.test(normalizedInput)
+        || /&lt;(VT|FS|CR|LF|SP|TAB)&gt;/i.test(normalizedInput);
+      const decodedInput = decodeHl7ControlTokens(normalizedInput);
+      const extractedMessages = [];
+      const transportMessagePattern = /(?:\x0b)?(MSH\|[\s\S]*?)(?:\x1c)(?:\r?\n)?/g;
+      let match;
+
+      while ((match = transportMessagePattern.exec(decodedInput)) !== null) {
+        extractedMessages.push(match[1]);
+      }
+
+      if (!extractedMessages.length) {
+        const plainBlocks = decodedInput
+          .trim()
+          .split(/\n(?=MSH\|)/)
+          .map((block) => {
+            const startIndex = block.indexOf("MSH|");
+            return startIndex >= 0 ? block.slice(startIndex) : "";
+          })
+          .filter(Boolean);
+
+        extractedMessages.push(...plainBlocks);
+      }
+
+      if (!extractedMessages.length) {
+        const logLineBlocks = decodedInput
+          .split("\n")
+          .map((line) => {
+            const startIndex = line.indexOf("MSH|");
+            return startIndex >= 0 ? line.slice(startIndex) : "";
+          })
+          .filter(Boolean);
+
+        extractedMessages.push(...logLineBlocks);
+      }
+
+      const messages = extractedMessages
+        .map((message) => sanitizeExtractedMessage(message))
+        .filter(Boolean);
+
+      if (hasSymbolicControlTokens) {
+        successes.push("Detected and converted symbolic HL7 control tokens such as <VT>, <FS>, <CR>, and <SP>.");
+      }
+
+      if (messages.length) {
+        successes.push(`Extracted ${messages.length} HL7 message(s) from the input.`);
+      } else {
+        warnings.push("No extractable HL7 payload was found. Check whether the input contains an MSH segment or a <VT>...<FS><CR> wrapped message.");
+      }
+
+      return { messages, warnings, successes };
+    }
     function validateSegmentFieldCount(segmentName, actualCount, errors) {
       const expectedCount = segmentFieldLimits[segmentName];
       if (!expectedCount) {
@@ -348,6 +469,68 @@ QAK|SR|OK|`;
       });
     }
 
+    function createExtractedMessageCard(messageInfo, index) {
+      const wrapper = document.createElement("article");
+      wrapper.className = "overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm";
+
+      const header = document.createElement("div");
+      header.className = "flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between";
+
+      const titleGroup = document.createElement("div");
+      const title = document.createElement("p");
+      title.className = "text-sm font-semibold text-slate-800";
+      title.textContent = `消息 ${index + 1}`;
+
+      const subtitle = document.createElement("p");
+      subtitle.className = "mt-1 text-xs text-slate-500";
+      subtitle.textContent = messageInfo.type || "未识别消息类型";
+
+      titleGroup.appendChild(title);
+      titleGroup.appendChild(subtitle);
+
+      const badgeGroup = document.createElement("div");
+      badgeGroup.className = "flex flex-wrap gap-2";
+
+      const typeBadge = document.createElement("span");
+      typeBadge.className = "rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white";
+      typeBadge.textContent = messageInfo.type || "UNKNOWN";
+      badgeGroup.appendChild(typeBadge);
+
+      const scopeBadge = document.createElement("span");
+      scopeBadge.className = messageInfo.validated
+        ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700"
+        : "rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700";
+      scopeBadge.textContent = messageInfo.validated ? "参与校验" : "仅展示";
+      badgeGroup.appendChild(scopeBadge);
+
+      header.appendChild(titleGroup);
+      header.appendChild(badgeGroup);
+
+      const body = document.createElement("pre");
+      body.className = "overflow-x-auto whitespace-pre-wrap break-all bg-slate-950 px-4 py-4 font-mono text-sm leading-6 text-emerald-200";
+      body.textContent = messageInfo.message;
+
+      wrapper.appendChild(header);
+      wrapper.appendChild(body);
+      return wrapper;
+    }
+
+    function renderExtractedMessages(messageInfos) {
+      extractedMessageList.innerHTML = "";
+
+      if (!messageInfos || !messageInfos.length) {
+        const emptyState = document.createElement("div");
+        emptyState.className = "rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm leading-6 text-slate-500";
+        emptyState.textContent = "校验后，这里会显示从日志或原始输入中解析出的可读 HL7 报文。";
+        extractedMessageList.appendChild(emptyState);
+        return;
+      }
+
+      messageInfos.forEach((messageInfo, index) => {
+        extractedMessageList.appendChild(createExtractedMessageCard(messageInfo, index));
+      });
+    }
+
     function setStatus(hasErrors, hasWarnings) {
       statusBadge.className = "inline-flex items-center self-start rounded-full px-4 py-2 text-sm font-semibold";
       summaryCard.className = "mt-6 rounded-2xl border p-5";
@@ -382,9 +565,10 @@ QAK|SR|OK|`;
       renderList(errorList, [], "error", "校验后这里会显示错误。");
       renderList(warningList, [], "warning", "校验后这里会显示警告。");
       renderList(successList, [], "success", "校验后这里会显示通过项。");
+      renderExtractedMessages([]);
     }
 
-    function validateHl7Message(rawInput) {
+    function validateSingleHl7Message(rawInput) {
       const errors = [];
       const warnings = [];
       const successes = [];
@@ -779,7 +963,7 @@ QAK|SR|OK|`;
                 errors.push(`DSP-17（收费类型）只能为 own、insurance，当前为 "${dataLine}"。`);
               }
 
-              if (dspId === 22 && dataLine && !isPositiveInteger(dataLine)) {
+              if (dspId === 22 && dataLine && !isDigitString(dataLine)) {
                 errors.push(`DSP-22（样本编号）应为正整数，当前为 "${dataLine}"。`);
               }
 
@@ -802,6 +986,8 @@ QAK|SR|OK|`;
                     errors.push(`DSP-${dspId} 的项目通道号不能为空。`);
                   } else if (!isPositiveInteger(channelNo)) {
                     errors.push(`DSP-${dspId} 的第一位必须是整数项目通道号，例如 "41^^^"，当前为 "${channelNo}"。`);
+                  } else if (Number(channelNo) > 1000) {
+                    errors.push(`DSP-${dspId} 的项目通道号不能超过 1000，当前为 "${channelNo}"。`);
                   }
                 }
               }
@@ -862,6 +1048,86 @@ QAK|SR|OK|`;
       return { errors, warnings, successes };
     }
 
+    function validateHl7Message(rawInput) {
+      const errors = [];
+      const warnings = [];
+      const successes = [];
+      const trimmedInput = rawInput.trim();
+
+      if (!trimmedInput) {
+        errors.push("Please paste HL7 content.");
+        return {
+          errors,
+          warnings,
+          successes,
+          extractedMessages: [],
+          extractedMessageCount: 0,
+          validatedMessageCount: 0,
+          ignoredMessageCount: 0,
+        };
+      }
+
+      const extraction = extractHl7Messages(trimmedInput);
+      warnings.push(...extraction.warnings);
+      successes.push(...extraction.successes);
+
+      if (!extraction.messages.length) {
+        errors.push("No valid HL7 reply message could be extracted from the input.");
+        return {
+          errors,
+          warnings,
+          successes,
+          extractedMessages: [],
+          extractedMessageCount: 0,
+          validatedMessageCount: 0,
+          ignoredMessageCount: 0,
+        };
+      }
+
+      const messageCandidates = extraction.messages.map((message) => ({
+        message,
+        type: getMessageTypeFromMessage(message),
+      }));
+      const messagesToValidate = messageCandidates.filter((candidate) => supportedMessageTypes.has(candidate.type));
+      const ignoredCandidates = messageCandidates.filter((candidate) => !supportedMessageTypes.has(candidate.type));
+
+      ignoredCandidates.forEach((candidate, index) => {
+        if (candidate.type) {
+          warnings.push(`Ignored non-target message #${index + 1}: ${candidate.type}. Only QCK^Q02 and DSR^Q03 replies are validated.`);
+        } else {
+          warnings.push("Ignored one HL7 message without a recognizable MSH-9 message type.");
+        }
+      });
+
+      messagesToValidate.forEach((candidate, index) => {
+        const label = messagesToValidate.length > 1 ? `Message ${index + 1} ${candidate.type}` : candidate.type;
+        const result = validateSingleHl7Message(candidate.message);
+
+        errors.push(...prefixResultItems(result.errors, label));
+        warnings.push(...prefixResultItems(result.warnings, label));
+        successes.push(...prefixResultItems(result.successes, label));
+      });
+
+      if (!messagesToValidate.length) {
+        errors.push("No LIS reply message was found. Only QCK^Q02 and DSR^Q03 are supported.");
+      } else {
+        successes.push(`Validated ${messagesToValidate.length} LIS reply message(s) extracted from the input.`);
+      }
+
+      return {
+        errors,
+        warnings,
+        successes,
+        extractedMessages: messageCandidates.map((candidate) => ({
+          type: candidate.type,
+          message: candidate.message,
+          validated: supportedMessageTypes.has(candidate.type),
+        })),
+        extractedMessageCount: extraction.messages.length,
+        validatedMessageCount: messagesToValidate.length,
+        ignoredMessageCount: ignoredCandidates.length,
+      };
+    }
     function runValidation() {
       const result = validateHl7Message(hl7Input.value);
       const hasErrors = result.errors.length > 0;
@@ -884,6 +1150,7 @@ QAK|SR|OK|`;
       renderList(errorList, result.errors, "error", "未发现错误。");
       renderList(warningList, result.warnings, "warning", "未发现警告。");
       renderList(successList, result.successes, "success", "暂无通过项。");
+      renderExtractedMessages(result.extractedMessages);
       if (window.innerWidth < 1024) {
         resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
       }
@@ -912,3 +1179,4 @@ QAK|SR|OK|`;
   </script>
 </body>
 </html>
+
